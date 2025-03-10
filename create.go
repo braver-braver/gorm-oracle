@@ -29,7 +29,22 @@ func Create(db *gorm.DB) {
 		)
 
 		if hasConflict {
-			if stmtSchema != nil && len(stmtSchema.PrimaryFields) > 0 {
+			// 检查是否指定了冲突列
+			if len(onConflict.Columns) > 0 {
+				columnsMap := map[string]bool{}
+				for _, column := range createValues.Columns {
+					columnsMap[column.Name] = true
+				}
+
+				// 检查所有指定的冲突列是否都在创建值中
+				for _, field := range onConflict.Columns {
+					if _, ok := columnsMap[field.Name]; !ok {
+						hasConflict = false
+						break
+					}
+				}
+			} else if stmtSchema != nil && len(stmtSchema.PrimaryFields) > 0 {
+				// 如果没有指定冲突列，则使用主键
 				columnsMap := map[string]bool{}
 				for _, column := range createValues.Columns {
 					columnsMap[column.Name] = true
@@ -151,12 +166,25 @@ func MergeCreate(db *gorm.DB, onConflict clause.OnConflict, values clause.Values
 	_, _ = db.Statement.WriteString(" ON (")
 
 	var where clause.Where
-	for _, field := range db.Statement.Schema.PrimaryFields {
-		where.Exprs = append(where.Exprs, clause.Eq{
-			Column: clause.Column{Table: db.Statement.Table, Name: field.DBName},
-			Value:  clause.Column{Table: "excluded", Name: field.DBName},
-		})
+	
+	// 如果指定了冲突列，则使用这些列作为合并条件
+	if len(onConflict.Columns) > 0 {
+		for _, column := range onConflict.Columns {
+			where.Exprs = append(where.Exprs, clause.Eq{
+				Column: clause.Column{Table: db.Statement.Table, Name: column.Name},
+				Value:  clause.Column{Table: "excluded", Name: column.Name},
+			})
+		}
+	} else {
+		// 否则使用主键
+		for _, field := range db.Statement.Schema.PrimaryFields {
+			where.Exprs = append(where.Exprs, clause.Eq{
+				Column: clause.Column{Table: db.Statement.Table, Name: field.DBName},
+				Value:  clause.Column{Table: "excluded", Name: field.DBName},
+			})
+		}
 	}
+	
 	where.Build(db.Statement)
 	_ = db.Statement.WriteByte(')')
 
