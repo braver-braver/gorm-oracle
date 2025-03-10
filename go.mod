@@ -1,4 +1,4 @@
-module github.com/godoes/gorm-oracle
+module github.com/braver-braver/gorm-oracle
 
 go 1.18
 
